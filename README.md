@@ -4,10 +4,14 @@ Folder Size Redux is a small utility that shows the size of every item in File E
 
 The information is displayed in a secondary window, alongside File Explorer. Folder sizes are calculated in the background when you open a drive or a folder, so the information is complete and up to date as you browse its contents.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img src="docs/screenshot-light.png" width="307" alt="The Folder Size Redux companion window, listing the folders and files of a user folder with their sizes">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+    <img src="docs/screenshot-light.png" width="307" alt="The Folder Size Redux companion window, listing the folders and files of a user folder with their sizes">
+  </picture>
+  <br>
+  <sub>The Folder Size Redux companion window, listing the folders and files of a user folder with their sizes</sub>
+</p>
 
 This project is actually a fork of [Folder Size for Windows](https://sourceforge.net/projects/foldersize/) 2.6 by Brian Oraas (Brio), last updated in 2013. It was originally designed for Windows 2000 and XP to add a column to File Explorer showing folder sizes. When Windows Vista made it impossible to customize File Explorer that way, Brio and his contributors reworked the code into a version with a companion window.
 
