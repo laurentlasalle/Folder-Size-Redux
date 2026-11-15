@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    # contents: write lets a tag build create the GitHub release (see the last step).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
 
@@ -71,3 +74,33 @@ jobs:
             FolderSize/Release/x64/FolderSizeSvc.exe
             FolderSize/Release/x64/FolderSize.cpl
             FolderSize/Release/x64/CLClient.exe
+
+      # A tag such as v0.1.0 publishes a GitHub release with the installer and a portable .zip.
+      # The tag must match ProductVersion in the installer (tables64\Property.idt), and the
+      # release notes come from .github/release-notes/<tag>.md.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.Substring(1)
+          $property = Get-Content FolderSize\MSI\tables64\Property.idt | Where-Object { $_ -match '^ProductVersion\t' }
+          $productVersion = ($property -split "`t")[1]
+          if ($productVersion -ne $version) { throw "Tag $tag doesn't match ProductVersion $productVersion" }
+          $notes = ".github\release-notes\$tag.md"
+          if (-not (Test-Path $notes)) { throw "Missing release notes: $notes" }
+
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item FolderSize\MSI\FolderSize64.msi "dist\FolderSizeRedux-$version-x64.msi"
+
+          # Portable version: the three programs, with the README and the license.
+          $portable = "FolderSizeRedux-$version-x64-portable"
+          New-Item -ItemType Directory "dist\$portable" | Out-Null
+          Copy-Item FolderSize\Release\x64\FolderSize.exe, FolderSize\Release\x64\FolderSizeSvc.exe, `
+            FolderSize\Release\x64\FolderSize.cpl, README.md, COPYING "dist\$portable"
+          Compress-Archive "dist\$portable\*" "dist\$portable.zip"
+
+          gh release create $tag "dist\FolderSizeRedux-$version-x64.msi" "dist\$portable.zip" `
+            --title "Folder Size Redux $version" --notes-file $notes --verify-tag
