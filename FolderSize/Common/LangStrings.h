@@ -54,4 +54,6 @@
 #define STR_MENU_EXIT                            1050  // E&xit
 #define STR_GENERAL_WINDOW                       1051  // Window
 #define STR_GENERAL_MAX_WIDTH                    1052  // Maximum &width:
-#define STR_WINDOW_LINKED_FOLDER                 1053  // Linked folder: %s
+#define STR_WINDOW_SYMLINK                       1053  // Symlink
+#define STR_WINDOW_JUNCTION                      1054  // Junction
+#define STR_WINDOW_MOUNT_POINT                   1055  // Mount point

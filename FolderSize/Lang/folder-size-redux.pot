@@ -261,7 +261,17 @@ msgctxt "general.max_width"
 msgid "Maximum &width:"
 msgstr ""
 
-#. Tooltip of a row that is a link (symbolic link or junction) to a folder elsewhere. %s is the real path of that folder, such as D:\Music.
-msgctxt "window.linked_folder"
-msgid "Linked folder: %s"
+#. Shown instead of a size for a symbolic link (NTFS). Keep it short: it is in the size column.
+msgctxt "window.symlink"
+msgid "Symlink"
+msgstr ""
+
+#. Shown instead of a size for a junction (NTFS link to a folder). Keep it short: it is in the size column.
+msgctxt "window.junction"
+msgid "Junction"
+msgstr ""
+
+#. Shown instead of a size for a mount point (a drive shown as a folder). Keep it short: it is in the size column.
+msgctxt "window.mount_point"
+msgid "Mount point"
 msgstr ""

@@ -36,8 +36,50 @@ static bool GetLogicalFileSize(LPCTSTR pFileName, ULONGLONG& nSize)
 }
 
 
-// Overlay image of the system list of icons used for the shortcut arrow (see FSWindow::OnCreate).
-#define SHORTCUT_OVERLAY 1
+// The overlay of File Explorer's shortcut arrow in the system list of icons (SHGetIconOverlayIndex,
+// read in FSWindow::OnCreate): File Explorer sets it up in every process's copy of that list.
+// 0 or less if unknown: no arrow then.
+static int g_shortcutOverlay = 0;
+
+// Kinds of links of the file system (NTFS reparse points), shown instead of a size.
+enum LinkType { LINK_NONE, LINK_SYMLINK, LINK_JUNCTION, LINK_MOUNT_POINT };
+
+// The kind of link an item is, from its reparse tag (given with the folder listing, so it costs
+// one call for items that are reparse points only). A junction and a mount point share the same
+// tag; a mount point leads to a volume, which GetVolumeNameForVolumeMountPoint recognizes. Other
+// reparse points (OneDrive files and folders, deduplicated files) aren't links: LINK_NONE.
+static LinkType GetLinkType(LPCTSTR pszPath)
+{
+	WIN32_FIND_DATA fd;
+	HANDLE hFind = FindFirstFileEx(pszPath, FindExInfoBasic, &fd, FindExSearchNameMatch, NULL, 0);
+	if (hFind == INVALID_HANDLE_VALUE)
+		return LINK_NONE;
+	FindClose(hFind);
+	if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+		return LINK_NONE;
+	if (fd.dwReserved0 == IO_REPARSE_TAG_SYMLINK)
+		return LINK_SYMLINK;
+	if (fd.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT)
+	{
+		TCHAR szMountPoint[MAX_PATH + 1], szVolume[64];
+		lstrcpyn(szMountPoint, pszPath, MAX_PATH);
+		PathAddBackslash(szMountPoint);
+		return GetVolumeNameForVolumeMountPoint(szMountPoint, szVolume, 64) ? LINK_MOUNT_POINT : LINK_JUNCTION;
+	}
+	return LINK_NONE;
+}
+
+// Text shown in the size column for a link.
+static std::wstring GetLinkTypeText(LinkType type)
+{
+	switch (type)
+	{
+	case LINK_SYMLINK: return Tr(STR_WINDOW_SYMLINK);
+	case LINK_JUNCTION: return Tr(STR_WINDOW_JUNCTION);
+	case LINK_MOUNT_POINT: return Tr(STR_WINDOW_MOUNT_POINT);
+	default: return L"";
+	}
+}
 
 class ListItem
 {
@@ -63,11 +105,12 @@ public:
 	
 	void UpdateSize(FOLDERINFO2& size) { m_size = size; }
 
-	// A folder that is a symbolic link or a junction to a folder elsewhere: its real path
-	// (see GetLinkTarget). Its size isn't part of the total of the folder shown.
-	void SetLinkTarget(LPCTSTR pszTarget) { lstrcpyn(m_linkTarget, pszTarget, MAX_PATH); }
-	bool IsLink() { return m_linkTarget[0] != '\0'; }
-	LPCTSTR GetLinkTarget() { return m_linkTarget; }
+	// An item that is a link of the file system to data elsewhere (see GetLinkType): it takes
+	// almost no space where it is, like a shortcut, so the size column shows the kind of link
+	// instead of the size of what it leads to.
+	void SetLinkType(LinkType type) { m_linkType = type; }
+	LinkType GetLinkType() { return m_linkType; }
+	bool IsLink() { return m_linkType != LINK_NONE; }
 
 	// Shown with the shortcut arrow on its icon, as in File Explorer: shortcuts (.lnk), symbolic
 	// links and junctions.
@@ -79,11 +122,11 @@ public:
 	void SetHidden(bool bHidden) { m_bHidden = bHidden; }
 	bool IsHidden() { return m_bHidden; }
 
-	// The state of the row in the list for these: the shortcut arrow (overlay image, see
-	// FSWindow::OnCreate) and the faded icon (LVIS_CUT).
+	// The state of the row in the list for these: the shortcut arrow (overlay, see
+	// g_shortcutOverlay) and the faded icon (LVIS_CUT).
 	UINT GetListState()
 	{
-		return (m_bShortcutArrow ? INDEXTOOVERLAYMASK(SHORTCUT_OVERLAY) : 0) | (m_bHidden ? LVIS_CUT : 0);
+		return (m_bShortcutArrow && g_shortcutOverlay > 0 ? INDEXTOOVERLAYMASK(g_shortcutOverlay) : 0) | (m_bHidden ? LVIS_CUT : 0);
 	}
 
 private:
@@ -94,7 +137,7 @@ private:
 	int m_icon;
 	TCHAR m_filename[MAX_PATH];
 	TCHAR m_name[MAX_PATH];
-	TCHAR m_linkTarget[MAX_PATH] = {0};
+	LinkType m_linkType = LINK_NONE;
 	bool m_bShortcutArrow = false;
 	bool m_bHidden = false;
 };
@@ -265,7 +308,8 @@ static LPITEMIDLIST GetBrowserFolder(IWebBrowser2* pWebBrowser);
 //
 // The service doesn't compute folders reached through a link (FolderManager::GetFolder): their
 // content would be counted twice, and its changes are reported on the volume of the real path,
-// not on the one of the link. So the window asks the service with the real path instead.
+// not on the one of the link. So in a folder reached through a link, the window asks the service
+// about the subfolders with their real path instead.
 static bool GetLinkTarget(LPCTSTR pszPath, LPTSTR pszTarget)
 {
 	HANDLE hFolder = CreateFile(pszPath, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -289,14 +333,6 @@ static bool GetLinkTarget(LPCTSTR pszPath, LPTSTR pszTarget)
 	return true;
 }
 
-// Lowercase copy of a path, to compare paths regardless of case.
-static std::wstring LowerPath(LPCTSTR pszPath)
-{
-	std::wstring path = pszPath;
-	if (!path.empty())
-		CharLowerBuffW(&path[0], (DWORD)path.size());
-	return path;
-}
 
 // Index in the system image list of the generic small folder or file icon, read once.
 static int GetGenericIcon(bool bFolder)
@@ -425,9 +461,7 @@ DWORD FolderViewScanner::ThreadProc()
 	// service for the sizes of its subfolders.
 	TCHAR szRealFolder[MAX_PATH];
 	bool bLinkedFolder = false;
-	// Rows that are links to folders elsewhere: real path (lowercase) -> name in this folder,
-	// to match the updates of their size from the service (see the refresh loop below).
-	map<wstring, wstring> linkRows;
+
 	LPARAM nViewItems = 0;   // number of items in File Explorer's view, see WM_ENUMDONE
 
 	IServiceProvider* psp;
@@ -538,8 +572,9 @@ DWORD FolderViewScanner::ThreadProc()
 											bool bIsDirectory = (dwFileAttributes != INVALID_FILE_ATTRIBUTES)
 												? (dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0
 												: (attributes & SFGAO_FOLDER) != 0;
-											TCHAR szLinkTarget[MAX_PATH];
-											szLinkTarget[0] = '\0';
+											// links show their kind instead of a size (see ListItem::SetLinkType)
+											LinkType linkType = (!bThisPC && dwFileAttributes != INVALID_FILE_ATTRIBUTES
+												&& (dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) ? GetLinkType(pPath) : LINK_NONE;
 											ULARGE_INTEGER total, freeSpace;
 											if (bThisPC)
 											{
@@ -556,22 +591,19 @@ DWORD FolderViewScanner::ThreadProc()
 												fi.nLogicalSize = total.QuadPart - freeSpace.QuadPart;
 												fi.giff = GIFF_CLEAN;
 											}
+											else if (linkType != LINK_NONE)
+											{
+												// nothing to measure: the size column shows the kind of link
+												fi.giff = GIFF_CLEAN;
+											}
 											else if (bIsDirectory)
 											{
-												// Ask the service with the real path of folders reached through
-												// a link: a row that is a link itself, or any subfolder of a
+												// Ask the service with the real path of the subfolders of a
 												// folder reached through a link (see GetLinkTarget).
 												LPCTSTR pszQuery = pPath;
 												TCHAR szQuery[MAX_PATH];
-												if ((dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) && GetLinkTarget(pPath, szLinkTarget))
-												{
-													pszQuery = szLinkTarget;
-													linkRows[LowerPath(szLinkTarget)] = PathFindFileName(pPath);
-												}
-												else if (bLinkedFolder && PathCombine(szQuery, szRealFolder, PathFindFileName(pPath)))
-												{
+												if (bLinkedFolder && PathCombine(szQuery, szRealFolder, PathFindFileName(pPath)))
 													pszQuery = szQuery;
-												}
 												t = MeasureNowIf(m_bLog);
 												GetInfoForFolder(pszQuery, fi);
 												usFolderSizes += MeasureNowIf(m_bLog) - t;
@@ -607,12 +639,11 @@ DWORD FolderViewScanner::ThreadProc()
 												// name can then be told apart. Folders keep the name File Explorer shows
 												// (some system folders show a localized name).
 												bIsDirectory ? szDisplayName : PathFindFileName(pPath), bIsDirectory);
-											if (szLinkTarget[0])
-												pItem->SetLinkTarget(szLinkTarget);
-											// File Explorer shows the shortcut arrow on items it considers
-											// links (SFGAO_LINK): shortcuts, symbolic links and junctions, but
-											// not OneDrive folders, which are reparse points too.
-											pItem->SetShortcutArrow(!bThisPC && ((attributes & SFGAO_LINK) || szLinkTarget[0]));
+											pItem->SetLinkType(linkType);
+											// File Explorer shows the shortcut arrow on shortcuts (SFGAO_LINK)
+											// and on links of the file system, but not on OneDrive folders,
+											// which are reparse points too.
+											pItem->SetShortcutArrow(!bThisPC && ((attributes & SFGAO_LINK) || linkType != LINK_NONE));
 											pItem->SetHidden(!bThisPC && ((dwFileAttributes != INVALID_FILE_ATTRIBUTES && (dwFileAttributes & FILE_ATTRIBUTE_HIDDEN))
 												|| PathFindFileName(pPath)[0] == '.'));
 											pItemID = NULL;
@@ -679,19 +710,9 @@ DWORD FolderViewScanner::ThreadProc()
 
 		if (hPipe != INVALID_HANDLE_VALUE)
 		{
-			// Ask for the updates of the folder shown (its real path if reached through a link)
-			// and of the folders holding the real paths of the rows that are links.
-			LPCTSTR pszBrowsed = bLinkedFolder ? szRealFolder : szFolder;
-			std::wstring browsedLower = LowerPath(pszBrowsed);
+			// Ask for the updates of the folder shown, by its real path if reached through a link.
 			Strings strsFoldersBrowsed;
-			strsFoldersBrowsed.insert(pszBrowsed);
-			for (map<wstring, wstring>::const_iterator l = linkRows.begin(); l != linkRows.end(); l++)
-			{
-				TCHAR szParent[MAX_PATH];
-				lstrcpyn(szParent, l->first.c_str(), MAX_PATH);
-				if (PathRemoveFileSpec(szParent))
-					strsFoldersBrowsed.insert(szParent);
-			}
+			strsFoldersBrowsed.insert(bLinkedFolder ? szRealFolder : szFolder);
 			if (WriteGetUpdatedFoldersRequest(hPipe, strsFoldersBrowsed))
 			{
 				Strings strsFoldersToUpdate;
@@ -699,28 +720,9 @@ DWORD FolderViewScanner::ThreadProc()
 				{
 					for (Strings::const_iterator i = strsFoldersToUpdate.begin(); i != strsFoldersToUpdate.end(); i++)
 					{
-						// Find the row of the folder: a row that is a link, by its real path;
-						// otherwise a subfolder of the folder shown, by its name. When updates were
-						// also asked for the folders holding the real paths of links, their other
-						// subfolders aren't in the list: skip them.
-						std::wstring name;
-						std::wstring lower = LowerPath(i->c_str());
-						map<wstring, wstring>::const_iterator link = linkRows.find(lower);
-						if (link != linkRows.end())
-						{
-							name = link->second;
-						}
-						else
-						{
-							TCHAR szParent[MAX_PATH];
-							lstrcpyn(szParent, lower.c_str(), MAX_PATH);
-							if (!linkRows.empty() && (!PathRemoveFileSpec(szParent) || lstrcmp(szParent, browsedLower.c_str()) != 0))
-								continue;
-							name = PathFindFileName(i->c_str());
-						}
 						FOLDERINFO2 fi;
 						GetInfoForFolder(i->c_str(), fi);
-						RefreshItem* pItem = new RefreshItem(name.c_str(), fi);
+						RefreshItem* pItem = new RefreshItem(PathFindFileName(i->c_str()), fi);
 						EnterCriticalSection(&m_cs);
 						if (m_refreshItems.empty())
 							PostMessage(m_hWndPost, WM_REFRESHITEMS, 0, 0);
@@ -1008,7 +1010,6 @@ BEGIN_MSG_MAP(FSWindow)
 	NOTIFY_HANDLER(1, LVN_COLUMNCLICK, OnColumnClick)
 	NOTIFY_HANDLER(1, LVN_DELETEALLITEMS, OnDeleteAllItems)
 	NOTIFY_HANDLER(1, LVN_GETDISPINFO, OnGetDispInfo)
-	NOTIFY_HANDLER(1, LVN_GETINFOTIP, OnGetInfoTip)
 	NOTIFY_HANDLER(1, NM_CUSTOMDRAW, OnListCustomDraw)
 END_MSG_MAP()
 
@@ -1023,7 +1024,6 @@ END_MSG_MAP()
 	LRESULT OnNewItems(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnRefreshItems(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnGetDispInfo(int idCtrl, LPNMHDR pnmh, BOOL& bHandled);
-	LRESULT OnGetInfoTip(int idCtrl, LPNMHDR pnmh, BOOL& bHandled);
 	LRESULT OnListCustomDraw(int idCtrl, LPNMHDR pnmh, BOOL& bHandled);
 	void UpdateTitle();
 	void SortWhenPointerLeaves();
@@ -1167,7 +1167,7 @@ LRESULT FSWindow::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandl
 		return -1;
 
 	// LVS_EX_INFOTIP: a tooltip shows the whole name of a row cut with "..." (see the maximum
-	// width in AdjustSizeForList), and the real path of rows that are links (see OnGetInfoTip).
+	// width in AdjustSizeForList).
 	// No LVS_EX_AUTOSIZECOLUMNS: when the window is resized, it took the width from the size
 	// column, cutting the sizes. The columns are sized by AdjustSizeForList and OnSize instead.
 	ListView_SetExtendedListViewStyle(m_lv, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP);
@@ -1191,12 +1191,11 @@ LRESULT FSWindow::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandl
 	if (himl == NULL)
 		return -1;
 	ListView_SetImageList(m_lv, himl, LVSIL_SMALL);
-	// The shortcut arrow of File Explorer, drawn over the icons of shortcuts, symbolic links and
-	// junctions (see ListItem::GetListState). This process's copy of the system list of icons
-	// may not have it as an overlay image yet.
-	int linkImage = SHGetIconOverlayIndex(NULL, IDO_SHGIOI_LINK);
-	if (linkImage >= 0)
-		ImageList_SetOverlayImage(himl, linkImage, SHORTCUT_OVERLAY);
+	// The overlay of File Explorer's shortcut arrow, drawn over the icons of shortcuts and links
+	// (see ListItem::GetListState). SHGetIconOverlayIndex gives the number of the overlay, already
+	// set up in the system list of icons, not the number of an image.
+	if (g_shortcutOverlay <= 0)
+		g_shortcutOverlay = SHGetIconOverlayIndex(NULL, IDO_SHGIOI_LINK);
 
 	ApplySort();
 	AdjustSizeForList();
@@ -1439,7 +1438,10 @@ bool FSWindow::AddPendingRows()
 		for (size_t i=0; i<items.size(); i++)
 		{
 			TCHAR buffer[50];
-			FormatFolderInfoBuffer(items[i]->GetSize(), buffer, 50);
+			if (items[i]->IsLink())
+				wsprintf(buffer, _T("%s "), GetLinkTypeText(items[i]->GetLinkType()).c_str());  // space: see FormatFolderInfoBuffer
+			else
+				FormatFolderInfoBuffer(items[i]->GetSize(), buffer, 50);
 
 			// Shown name followed by a space, which keeps the longest name away from the column
 			// separator (the column is sized to fit its text exactly). Sorting uses the name itself.
@@ -1572,31 +1574,9 @@ LRESULT FSWindow::OnGetDispInfo(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 	return 0;
 }
 
-// The tooltip of a row: the list fills in the whole name of a row cut with "..."; for a row that
-// is a link, add where it leads.
-LRESULT FSWindow::OnGetInfoTip(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
-{
-	NMLVGETINFOTIP* pTip = (NMLVGETINFOTIP*)pnmh;
-	LVITEM lvi = {0};
-	lvi.mask = LVIF_PARAM;
-	lvi.iItem = pTip->iItem;
-	if (!ListView_GetItem(m_lv, &lvi) || !lvi.lParam)
-		return 0;
-	ListItem* pItem = (ListItem*)lvi.lParam;
-	if (!pItem->IsLink())
-		return 0;
-	TCHAR szLink[MAX_PATH + 100];
-	wsprintf(szLink, Tr(STR_WINDOW_LINKED_FOLDER).c_str(), pItem->GetLinkTarget());
-	std::wstring tip;
-	if (!(pTip->dwFlags & LVGIT_UNFOLDED))
-		tip = std::wstring(pTip->pszText) + L"\n";  // the name is cut: pszText holds the whole name
-	tip += szLink;
-	lstrcpyn(pTip->pszText, tip.c_str(), pTip->cchTextMax);
-	return 0;
-}
 
-// Draws hidden rows (name and size) in a dimmed color, as File Explorer does, and the size of the
-// rows that are links: it isn't part of the total of the folder shown (see GetLinkTarget).
+// Draws hidden rows (name and size) in a dimmed color, as File Explorer does, and the kind of link
+// shown instead of a size, so it isn't mistaken for one.
 LRESULT FSWindow::OnListCustomDraw(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 {
 	LPNMLVCUSTOMDRAW pcd = (LPNMLVCUSTOMDRAW)pnmh;
@@ -1973,7 +1953,7 @@ LRESULT FSWindow::OnRefreshItems(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& 
 		for (size_t i=0; i<items.size(); i++)
 		{
 			map<wstring, ListItem*>::iterator mapFind = m_nameMap.find(items[i]->GetFileName());
-			if (mapFind != m_nameMap.end())
+			if (mapFind != m_nameMap.end() && !mapFind->second->IsLink())
 			{
 				mapFind->second->UpdateSize(items[i]->GetSize());
 				LVFINDINFO lvfi;

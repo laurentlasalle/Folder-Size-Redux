@@ -58,7 +58,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Window"
     STR_GENERAL_MAX_WIDTH                    "Maximum &width:"
-    STR_WINDOW_LINKED_FOLDER                 "Linked folder: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_CATALAN, SUBLANG_CATALAN_CATALAN
@@ -117,7 +119,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Finestra"
     STR_GENERAL_MAX_WIDTH                    "&Amplada màxima:"
-    STR_WINDOW_LINKED_FOLDER                 "Carpeta enllaçada: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_GERMAN, SUBLANG_GERMAN
@@ -176,7 +180,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Fenster"
     STR_GENERAL_MAX_WIDTH                    "Maximale &Breite:"
-    STR_WINDOW_LINKED_FOLDER                 "Verknüpfter Ordner: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_SPANISH, SUBLANG_SPANISH_MODERN
@@ -235,7 +241,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Ventana"
     STR_GENERAL_MAX_WIDTH                    "&Ancho máximo:"
-    STR_WINDOW_LINKED_FOLDER                 "Carpeta vinculada: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_FRENCH, SUBLANG_FRENCH
@@ -294,7 +302,9 @@ BEGIN
     STR_MENU_EXIT                            "&Quitter"
     STR_GENERAL_WINDOW                       "Fenêtre"
     STR_GENERAL_MAX_WIDTH                    "&Largeur maximale :"
-    STR_WINDOW_LINKED_FOLDER                 "Dossier lié : %s"
+    STR_WINDOW_SYMLINK                       "Lien symbolique"
+    STR_WINDOW_JUNCTION                      "Jonction"
+    STR_WINDOW_MOUNT_POINT                   "Point de montage"
 END
 
 LANGUAGE LANG_HUNGARIAN, SUBLANG_HUNGARIAN_HUNGARY
@@ -353,7 +363,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Ablak"
     STR_GENERAL_MAX_WIDTH                    "Maximális &szélesség:"
-    STR_WINDOW_LINKED_FOLDER                 "Csatolt mappa: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_ITALIAN, SUBLANG_ITALIAN
@@ -412,7 +424,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Finestra"
     STR_GENERAL_MAX_WIDTH                    "&Larghezza massima:"
-    STR_WINDOW_LINKED_FOLDER                 "Cartella collegata: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN
@@ -471,7 +485,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "ウィンドウ"
     STR_GENERAL_MAX_WIDTH                    "最大幅(&W):"
-    STR_WINDOW_LINKED_FOLDER                 "リンクされたフォルダー: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_DUTCH, SUBLANG_DUTCH
@@ -530,7 +546,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Venster"
     STR_GENERAL_MAX_WIDTH                    "Maximale &breedte:"
-    STR_WINDOW_LINKED_FOLDER                 "Gekoppelde map: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_POLISH, SUBLANG_POLISH_POLAND
@@ -589,7 +607,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Okno"
     STR_GENERAL_MAX_WIDTH                    "Maksymalna &szerokość:"
-    STR_WINDOW_LINKED_FOLDER                 "Folder połączony: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_RUSSIAN, SUBLANG_RUSSIAN_RUSSIA
@@ -648,7 +668,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Окно"
     STR_GENERAL_MAX_WIDTH                    "Максимальная &ширина:"
-    STR_WINDOW_LINKED_FOLDER                 "Связанная папка: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_SWEDISH, SUBLANG_SWEDISH
@@ -707,7 +729,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Fönster"
     STR_GENERAL_MAX_WIDTH                    "Maximal &bredd:"
-    STR_WINDOW_LINKED_FOLDER                 "Länkad mapp: %s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
@@ -766,7 +790,9 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "窗口"
     STR_GENERAL_MAX_WIDTH                    "最大宽度(&W):"
-    STR_WINDOW_LINKED_FOLDER                 "链接的文件夹：%s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
 
 LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL
@@ -825,5 +851,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "視窗"
     STR_GENERAL_MAX_WIDTH                    "最大寬度(&W):"
-    STR_WINDOW_LINKED_FOLDER                 "連結的資料夾：%s"
+    STR_WINDOW_SYMLINK                       "Symlink"
+    STR_WINDOW_JUNCTION                      "Junction"
+    STR_WINDOW_MOUNT_POINT                   "Mount point"
 END
