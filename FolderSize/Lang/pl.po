@@ -264,5 +264,5 @@ msgstr "Maksymalna &szerokość:"
 
 #. Tooltip of a row that is a link (symbolic link or junction) to a folder elsewhere. %s is the real path of that folder, such as D:\Music.
 msgctxt "window.linked_folder"
-msgid "Linked folder: %s\nNot counted in this folder's total."
-msgstr "Folder połączony: %s\nNie jest wliczany do sumy tego folderu."
+msgid "Linked folder: %s"
+msgstr "Folder połączony: %s"

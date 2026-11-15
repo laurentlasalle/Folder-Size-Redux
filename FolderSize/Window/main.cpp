@@ -36,6 +36,9 @@ static bool GetLogicalFileSize(LPCTSTR pFileName, ULONGLONG& nSize)
 }
 
 
+// Overlay image of the system list of icons used for the shortcut arrow (see FSWindow::OnCreate).
+#define SHORTCUT_OVERLAY 1
+
 class ListItem
 {
 public:
@@ -66,6 +69,23 @@ public:
 	bool IsLink() { return m_linkTarget[0] != '\0'; }
 	LPCTSTR GetLinkTarget() { return m_linkTarget; }
 
+	// Shown with the shortcut arrow on its icon, as in File Explorer: shortcuts (.lnk), symbolic
+	// links and junctions.
+	void SetShortcutArrow(bool bArrow) { m_bShortcutArrow = bArrow; }
+	bool HasShortcutArrow() { return m_bShortcutArrow; }
+
+	// Hidden: marked hidden in the file system, or named with a leading dot (hidden by
+	// convention, as in Unix). Shown dimmed, with a faded icon, as File Explorer does.
+	void SetHidden(bool bHidden) { m_bHidden = bHidden; }
+	bool IsHidden() { return m_bHidden; }
+
+	// The state of the row in the list for these: the shortcut arrow (overlay image, see
+	// FSWindow::OnCreate) and the faded icon (LVIS_CUT).
+	UINT GetListState()
+	{
+		return (m_bShortcutArrow ? INDEXTOOVERLAYMASK(SHORTCUT_OVERLAY) : 0) | (m_bHidden ? LVIS_CUT : 0);
+	}
+
 private:
 	LPITEMIDLIST m_pidl;
 	FOLDERINFO2 m_size;
@@ -75,6 +95,8 @@ private:
 	TCHAR m_filename[MAX_PATH];
 	TCHAR m_name[MAX_PATH];
 	TCHAR m_linkTarget[MAX_PATH] = {0};
+	bool m_bShortcutArrow = false;
+	bool m_bHidden = false;
 };
 
 class RefreshItem
@@ -499,7 +521,7 @@ DWORD FolderViewScanner::ThreadProc()
 										// See FSWindow::OnGetDispInfo.
 										t = MeasureNowIf(m_bLog);
 										LPCITEMIDLIST pChild = pItemID;
-										SFGAOF attributes = SFGAO_FILESYSTEM | SFGAO_FOLDER;
+										SFGAOF attributes = SFGAO_FILESYSTEM | SFGAO_FOLDER | SFGAO_LINK;
 										bool bAttributes = SUCCEEDED(psf->GetAttributesOf(1, &pChild, &attributes));
 										usShellInfo += MeasureNowIf(m_bLog) - t;
 										if (bAttributes && attributes & SFGAO_FILESYSTEM)
@@ -587,6 +609,12 @@ DWORD FolderViewScanner::ThreadProc()
 												bIsDirectory ? szDisplayName : PathFindFileName(pPath), bIsDirectory);
 											if (szLinkTarget[0])
 												pItem->SetLinkTarget(szLinkTarget);
+											// File Explorer shows the shortcut arrow on items it considers
+											// links (SFGAO_LINK): shortcuts, symbolic links and junctions, but
+											// not OneDrive folders, which are reparse points too.
+											pItem->SetShortcutArrow(!bThisPC && ((attributes & SFGAO_LINK) || szLinkTarget[0]));
+											pItem->SetHidden(!bThisPC && ((dwFileAttributes != INVALID_FILE_ATTRIBUTES && (dwFileAttributes & FILE_ATTRIBUTE_HIDDEN))
+												|| PathFindFileName(pPath)[0] == '.'));
 											pItemID = NULL;
 
 											EnterCriticalSection(&m_cs);
@@ -832,6 +860,10 @@ static const UINT_PTR RELOAD_TIMER_ID = 1;
 // milliseconds, instead of after each batch of items; and once more when the scan is done.
 static const UINT LAYOUT_DELAY_MS = 100;
 static const UINT_PTR LAYOUT_TIMER_ID = 2;
+
+// See FSWindow::SortWhenPointerLeaves.
+static const UINT SORT_CHECK_MS = 500;
+static const UINT_PTR SORT_TIMER_ID = 3;
 #define WM_SHELLCHANGE (WM_APP + 5)
 
 // Colors of the list in dark mode, matching the dark File Explorer.
@@ -961,6 +993,7 @@ BEGIN_MSG_MAP(FSWindow)
 	MESSAGE_HANDLER(WM_CREATE, OnCreate)
 	MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
 	MESSAGE_HANDLER(WM_SIZE, OnSize)
+	MESSAGE_HANDLER(WM_SIZING, OnSizing)
 	MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBkgnd)
 	MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
 	MESSAGE_HANDLER(WM_SETTINGCHANGE, OnSettingChange)
@@ -982,6 +1015,7 @@ END_MSG_MAP()
 	LRESULT OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnDestroy(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnSize(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+	LRESULT OnSizing(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnEraseBkgnd(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnDpiChanged(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnSettingChange(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
@@ -992,6 +1026,8 @@ END_MSG_MAP()
 	LRESULT OnGetInfoTip(int idCtrl, LPNMHDR pnmh, BOOL& bHandled);
 	LRESULT OnListCustomDraw(int idCtrl, LPNMHDR pnmh, BOOL& bHandled);
 	void UpdateTitle();
+	void SortWhenPointerLeaves();
+	void FitNameColumnToList();
 	LRESULT OnEnumDone(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnShellChange(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnTimer(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
@@ -1047,6 +1083,11 @@ private:
 	HWND m_hwndTab;       // the tab's own window (ShellTabWindowClass), NULL if unknown
 	bool m_bDark;         // dark mode currently applied
 	int m_maxWidthDip;    // maximum width of the window at 100% scaling (setting, see LoadMaxWindowWidth)
+	bool m_bSortWaiting;  // SORT_TIMER_ID is set (see SortWhenPointerLeaves)
+	// The user resized the window by hand: its width is kept, and only its height follows the
+	// list, until another folder is shown (see OnSizing and AdjustSizeForList).
+	bool m_bUserWidth;
+	bool m_bFitting;      // AdjustSizeForList is moving the window (see OnSize)
 	HeaderDrawState m_headerState;  // read by ListViewSubclassProc
 	CComPtr<IWebBrowser2> m_pWebBrowser;
 	TCHAR m_szFolder[MAX_PATH * 4];
@@ -1098,7 +1139,7 @@ private:
 	ULONG m_changeNotifyId;   // registration for change notifications of the folder (0 if none)
 };
 
-FSWindow::FSWindow(IWebBrowser2* pWebBrowser) : m_lv(NULL), m_hFont(NULL), m_hwndExplorer(NULL), m_hwndTab(NULL), m_bDark(false), m_maxWidthDip(LoadMaxWindowWidth()), m_headerState(), m_pWebBrowser(pWebBrowser), m_pScanner(NULL), m_sort(LoadDefaultSort()), m_scanGeneration(0), m_bReloading(false), m_bScanDone(false), m_nScannedViewItems(0), m_bCheckViewAfterScan(false), m_bLayoutPending(false), m_bSortNeeded(false), m_nameTextMax(0), m_sizeTextMax(0), m_bColumnsGrew(false), m_bTextWidthsStale(false), m_measureIconUs(0), m_measureIcons(0), m_bOtherLocation(false), m_bLogEnabled(false), m_measureReason(L"open"), m_measureStartTick(0), m_measureStartCpu(0), m_measureUiCpuStart(0), m_measureAddUs(0), m_measureLayoutUs(0), m_measureBatches(0), m_measureLayouts(0), m_scanStartTick(0), m_lastScanEndTick(0), m_lastScanMs(0), m_bChangePending(false), m_bReloadTimerSet(false), m_changeNotifyId(0)
+FSWindow::FSWindow(IWebBrowser2* pWebBrowser) : m_lv(NULL), m_hFont(NULL), m_hwndExplorer(NULL), m_hwndTab(NULL), m_bDark(false), m_maxWidthDip(LoadMaxWindowWidth()), m_bSortWaiting(false), m_bUserWidth(false), m_bFitting(false), m_headerState(), m_pWebBrowser(pWebBrowser), m_pScanner(NULL), m_sort(LoadDefaultSort()), m_scanGeneration(0), m_bReloading(false), m_bScanDone(false), m_nScannedViewItems(0), m_bCheckViewAfterScan(false), m_bLayoutPending(false), m_bSortNeeded(false), m_nameTextMax(0), m_sizeTextMax(0), m_bColumnsGrew(false), m_bTextWidthsStale(false), m_measureIconUs(0), m_measureIcons(0), m_bOtherLocation(false), m_bLogEnabled(false), m_measureReason(L"open"), m_measureStartTick(0), m_measureStartCpu(0), m_measureUiCpuStart(0), m_measureAddUs(0), m_measureLayoutUs(0), m_measureBatches(0), m_measureLayouts(0), m_scanStartTick(0), m_lastScanEndTick(0), m_lastScanMs(0), m_bChangePending(false), m_bReloadTimerSet(false), m_changeNotifyId(0)
 {
 	BrowserEvents::DispEventAdvise(m_pWebBrowser);
 	CreateIfUnminimizedFolderView();
@@ -1127,7 +1168,9 @@ LRESULT FSWindow::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandl
 
 	// LVS_EX_INFOTIP: a tooltip shows the whole name of a row cut with "..." (see the maximum
 	// width in AdjustSizeForList), and the real path of rows that are links (see OnGetInfoTip).
-	ListView_SetExtendedListViewStyle(m_lv, LVS_EX_FULLROWSELECT | LVS_EX_AUTOSIZECOLUMNS | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP);
+	// No LVS_EX_AUTOSIZECOLUMNS: when the window is resized, it took the width from the size
+	// column, cutting the sizes. The columns are sized by AdjustSizeForList and OnSize instead.
+	ListView_SetExtendedListViewStyle(m_lv, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP);
 
 	SetWindowSubclass(m_lv, ListViewSubclassProc, 0, (DWORD_PTR)&m_headerState);
 
@@ -1148,6 +1191,12 @@ LRESULT FSWindow::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandl
 	if (himl == NULL)
 		return -1;
 	ListView_SetImageList(m_lv, himl, LVSIL_SMALL);
+	// The shortcut arrow of File Explorer, drawn over the icons of shortcuts, symbolic links and
+	// junctions (see ListItem::GetListState). This process's copy of the system list of icons
+	// may not have it as an overlay image yet.
+	int linkImage = SHGetIconOverlayIndex(NULL, IDO_SHGIOI_LINK);
+	if (linkImage >= 0)
+		ImageList_SetOverlayImage(himl, linkImage, SHORTCUT_OVERLAY);
 
 	ApplySort();
 	AdjustSizeForList();
@@ -1256,7 +1305,30 @@ LRESULT FSWindow::OnSize(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled
 {
 	int marginX = GetListMarginX();
 	::MoveWindow(m_lv, marginX, 0, max(0, (int)LOWORD(lParam) - 2 * marginX), HIWORD(lParam), TRUE);
+	// When the user sizes the window, only the name column follows (see FitNameColumnToList).
+	// When AdjustSizeForList moves it, the columns were already sized for it.
+	if (m_bUserWidth && !m_bFitting)
+		FitNameColumnToList();
 	return 0;
+}
+
+// The user is resizing the window with the mouse: from now on its width is theirs, until another
+// folder is shown (see OnNavigateComplete). AdjustSizeForList then only fits the height.
+LRESULT FSWindow::OnSizing(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+{
+	m_bUserWidth = true;
+	bHandled = FALSE;
+	return 0;
+}
+
+// Gives the name column all the width of the list the size column doesn't use: the size column
+// keeps its width and is never cut; names that don't fit end with "...".
+void FSWindow::FitNameColumnToList()
+{
+	RECT rc;
+	::GetClientRect(m_lv, &rc);  // without the vertical scroll bar, if there is one
+	int width = rc.right - ListView_GetColumnWidth(m_lv, 1);
+	ListView_SetColumnWidth(m_lv, 0, max(width, MulDiv(40, GetDpiForWindow(m_hWnd), 96)));
 }
 
 // Sorts the list in the current order and shows it in the column headers: the name header reads
@@ -1383,11 +1455,13 @@ bool FSWindow::AddPendingRows()
 				if (row != rows.end())
 				{
 					LVITEM item = {0};
-					item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM;
+					item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM | LVIF_STATE;
 					item.iItem = row->second;
 					item.pszText = szName;
 					item.iImage = I_IMAGECALLBACK;  // read when the row is shown
 					item.lParam = (LPARAM)items[i];
+					item.state = items[i]->GetListState();
+					item.stateMask = LVIS_OVERLAYMASK | LVIS_CUT;
 					ListView_SetItem(m_lv, &item);
 					ListView_SetItemText(m_lv, row->second, 1, buffer);
 					rows.erase(row);
@@ -1400,12 +1474,14 @@ bool FSWindow::AddPendingRows()
 			}
 
 			LVITEM item = {0};
-			item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM;
+			item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM | LVIF_STATE;
 			item.iItem = INT_MAX;
 			item.iSubItem = 0;
 			item.pszText = szName;
 			item.iImage = I_IMAGECALLBACK;  // read when the row is shown
 			item.lParam = (LPARAM)items[i];
+			item.state = items[i]->GetListState();
+			item.stateMask = LVIS_OVERLAYMASK | LVIS_CUT;
 			item.iItem = ListView_InsertItem(m_lv, &item);
 			ListView_SetItemText(m_lv, item.iItem, 1, buffer);
 			if (m_bReloading)
@@ -1497,7 +1573,7 @@ LRESULT FSWindow::OnGetDispInfo(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 }
 
 // The tooltip of a row: the list fills in the whole name of a row cut with "..."; for a row that
-// is a link, add where it leads and that its size isn't part of the total of the folder shown.
+// is a link, add where it leads.
 LRESULT FSWindow::OnGetInfoTip(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 {
 	NMLVGETINFOTIP* pTip = (NMLVGETINFOTIP*)pnmh;
@@ -1509,7 +1585,7 @@ LRESULT FSWindow::OnGetInfoTip(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 	ListItem* pItem = (ListItem*)lvi.lParam;
 	if (!pItem->IsLink())
 		return 0;
-	TCHAR szLink[MAX_PATH + 200];
+	TCHAR szLink[MAX_PATH + 100];
 	wsprintf(szLink, Tr(STR_WINDOW_LINKED_FOLDER).c_str(), pItem->GetLinkTarget());
 	std::wstring tip;
 	if (!(pTip->dwFlags & LVGIT_UNFOLDED))
@@ -1519,8 +1595,8 @@ LRESULT FSWindow::OnGetInfoTip(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 	return 0;
 }
 
-// Draws the size of the rows that are links in a dimmed color: it isn't part of the total of the
-// folder shown (see GetLinkTarget).
+// Draws hidden rows (name and size) in a dimmed color, as File Explorer does, and the size of the
+// rows that are links: it isn't part of the total of the folder shown (see GetLinkTarget).
 LRESULT FSWindow::OnListCustomDraw(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 {
 	LPNMLVCUSTOMDRAW pcd = (LPNMLVCUSTOMDRAW)pnmh;
@@ -1535,6 +1611,12 @@ LRESULT FSWindow::OnListCustomDraw(int idCtrl, LPNMHDR pnmh, BOOL& bHandled)
 	case CDDS_PREPAINT:
 		return CDRF_NOTIFYITEMDRAW;
 	case CDDS_ITEMPREPAINT:
+		if (pItem && pItem->IsHidden())
+		{
+			// hidden: the whole row (name and size) is dimmed
+			pcd->clrText = m_bDark ? DARK_SECONDARY_TEXT : GetSysColor(COLOR_GRAYTEXT);
+			return CDRF_NEWFONT;
+		}
 		return (pItem && pItem->IsLink()) ? CDRF_NOTIFYSUBITEMDRAW : CDRF_DODEFAULT;
 	case CDDS_ITEMPREPAINT | CDDS_SUBITEM:
 		if (pcd->iSubItem == 1)
@@ -1859,6 +1941,13 @@ LRESULT FSWindow::OnTimer(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandle
 		ApplyLayout();
 		return 0;
 	}
+	if (wParam == SORT_TIMER_ID)
+	{
+		KillTimer(SORT_TIMER_ID);
+		m_bSortWaiting = false;
+		SortWhenPointerLeaves();  // sorts now, or waits again if the pointer is still there
+		return 0;
+	}
 	if (wParam != RELOAD_TIMER_ID)
 	{
 		bHandled = FALSE;
@@ -1878,6 +1967,7 @@ LRESULT FSWindow::OnRefreshItems(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& 
 	std::vector<RefreshItem*> items = m_pScanner->GetRefreshItems();
 	if (!items.empty())
 	{
+		bool bChanged = false;
 		HDC hdc = ::GetDC(m_lv);
 		HGDIOBJ hOldFont = SelectObject(hdc, (HFONT)::SendMessage(m_lv, WM_GETFONT, 0, 0));
 		for (size_t i=0; i<items.size(); i++)
@@ -1892,26 +1982,61 @@ LRESULT FSWindow::OnRefreshItems(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& 
 				int iFind = ListView_FindItem(m_lv, -1, &lvfi);
 				if (iFind >= 0)
 				{
-					LVITEM lvi;
-					lvi.mask = LVIF_TEXT;
-					lvi.iItem = iFind;
-					lvi.iSubItem = 1;
-					TCHAR buffer[50];
+					// Rewrite the size only if its text changed: rewriting a row closes its
+					// tooltip, and a folder still being computed gets updates all the time.
+					TCHAR buffer[50], current[50];
 					FormatFolderInfoBuffer(items[i]->GetSize(), buffer, 50);
-					lvi.pszText = buffer;
-					ListView_SetItem(m_lv, &lvi);
-					NoteTextWidths(hdc, _T(""), buffer);
+					ListView_GetItemText(m_lv, iFind, 1, current, 50);
+					if (lstrcmp(buffer, current) != 0)
+					{
+						LVITEM lvi;
+						lvi.mask = LVIF_TEXT;
+						lvi.iItem = iFind;
+						lvi.iSubItem = 1;
+						lvi.pszText = buffer;
+						ListView_SetItem(m_lv, &lvi);
+						NoteTextWidths(hdc, _T(""), buffer);
+						bChanged = true;
+					}
 				}
 			}
 			delete items[i];
 		}
 		SelectObject(hdc, hOldFont);
 		::ReleaseDC(m_lv, hdc);
-		if (m_sort == SORT_SIZE)
-			ListView_SortItems(m_lv, GetCompareFunction(m_sort), 0);
-		AdjustSizeForList(false);
+		if (bChanged)
+		{
+			if (m_sort == SORT_SIZE)
+				SortWhenPointerLeaves();
+			AdjustSizeForList(false);
+		}
 	}
 	return 0;
+}
+
+// Sorts the list again after sizes changed, but not while the mouse pointer is over it: the rows
+// would move under the pointer, and the tooltip of the row pointed at would close. Then the list
+// is sorted once the pointer has left it (checked every SORT_CHECK_MS).
+void FSWindow::SortWhenPointerLeaves()
+{
+	POINT pt;
+	GetCursorPos(&pt);
+	HWND hwndPointed = WindowFromPoint(pt);
+	if (hwndPointed == m_lv || ::IsChild(m_lv, hwndPointed))
+	{
+		if (!m_bSortWaiting)
+		{
+			SetTimer(SORT_TIMER_ID, SORT_CHECK_MS);
+			m_bSortWaiting = true;
+		}
+		return;
+	}
+	if (m_bSortWaiting)
+	{
+		KillTimer(SORT_TIMER_ID);
+		m_bSortWaiting = false;
+	}
+	ListView_SortItems(m_lv, GetCompareFunction(m_sort), 0);
 }
 
 LRESULT FSWindow::OnClose(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
@@ -2106,8 +2231,6 @@ void FSWindow::CreateIfUnminimizedFolderView()
 // sizing them measures every row, which is slow with thousands of rows.
 void FSWindow::AdjustSizeForList(bool bMeasureColumns)
 {
-	DWORD dwExLvStyle = ListView_GetExtendedListViewStyle(m_lv);
-
 	// Use the measurements for the DPI of the monitor the window is on.
 	UINT dpi = GetDpiForWindow(m_hWnd);
 
@@ -2116,9 +2239,6 @@ void FSWindow::AdjustSizeForList(bool bMeasureColumns)
 		RemeasureTextWidths();
 		bMeasureColumns = true;
 	}
-	// The list sizes its columns to its own width when it is resized (LVS_EX_AUTOSIZECOLUMNS).
-	// Turn that off until the window has been moved, or shrinking the window squeezes the columns.
-	ListView_SetExtendedListViewStyle(m_lv, dwExLvStyle & ~LVS_EX_AUTOSIZECOLUMNS);
 	if (bMeasureColumns || m_bColumnsGrew)
 	{
 		ListView_SetColumnWidth(m_lv, 0, LVSCW_AUTOSIZE);
@@ -2153,6 +2273,11 @@ void FSWindow::AdjustSizeForList(bool bMeasureColumns)
 	int approxWidth = LOWORD(approx) + 4;
 	int approxHeight = HIWORD(approx);
 
+	if (m_bUserWidth)
+	{
+		// the width set by the user (rc is the list now; the margins and frame are added below)
+		approxWidth = rc.right - rc.left;
+	}
 	if (isTouchingRightSideOfMonitor)
 		rc.left = rc.right - approxWidth;
 	else
@@ -2178,10 +2303,12 @@ void FSWindow::AdjustSizeForList(bool bMeasureColumns)
 		rc.bottom -= shift;
 	}
 	// if we're still going off the bottom, trim it at the bottom and get ready for a scroll bar
+	// (a width set by the user already includes it, or the names make room for it)
 	if (rc.bottom > mi.rcWork.bottom)
 	{
 		rc.bottom = mi.rcWork.bottom;
-		rc.right += GetSystemMetricsForDpi(SM_CXVSCROLL, dpi);
+		if (!m_bUserWidth)
+			rc.right += GetSystemMetricsForDpi(SM_CXVSCROLL, dpi);
 	}
 	// if we're bumping out past the right of the monitor, bump it left instead
 	if (rc.right > mi.rcWork.right)
@@ -2193,9 +2320,14 @@ void FSWindow::AdjustSizeForList(bool bMeasureColumns)
 	RECT rcCurrent;
 	GetWindowRect(&rcCurrent);
 	if (!EqualRect(&rc, &rcCurrent))
+	{
+		m_bFitting = true;
 		MoveWindow(rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, TRUE);
-
-	ListView_SetExtendedListViewStyle(m_lv, dwExLvStyle);
+		m_bFitting = false;
+	}
+	// With a width set by the user, the name column takes the room the size column leaves.
+	if (m_bUserWidth)
+		FitNameColumnToList();
 }
 
 
@@ -2292,6 +2424,13 @@ void FSWindow::OnNavigateComplete(IDispatch* pDisp, VARIANT* URL)
 
 		// the notification from the control will clean up the old items
 		ListView_DeleteAllItems(m_lv);
+		// a width set by hand applies to the folder it was set in
+		m_bUserWidth = false;
+		if (m_bSortWaiting)
+		{
+			KillTimer(SORT_TIMER_ID);
+			m_bSortWaiting = false;
+		}
 
 		// Hide the window on locations it doesn't show (such as Home or Network), and show it again
 		// when coming back to a folder or to This PC.
@@ -2322,6 +2461,12 @@ void FSWindow::OnQuit()
 	::PostMessage(g_hwndMain, WM_KILLWINDOW, 0, (LPARAM)this);
 }
 
+// Connecting again to File Explorer after it restarted (see ShellWindowManager::OnTaskbarCreated):
+// tries every RECONNECT_DELAY_MS milliseconds, RECONNECT_TRIES times at most.
+static const UINT_PTR RECONNECT_TIMER_ID = 1;
+static const UINT RECONNECT_DELAY_MS = 2000;
+static const int RECONNECT_TRIES = 10;
+
 class ShellWindowManager :
 	public CWindowImpl<ShellWindowManager>,
 	public IDispEventSimpleImpl<1, ShellWindowManager, &DIID_DShellWindowsEvents>
@@ -2333,8 +2478,11 @@ public:
 	DECLARE_WND_CLASS(SHELL_WINDOW_CLASS_NAME)
 
 private:
-	void Activate();
+	bool Activate();
 	void Deactivate();
+	LRESULT OnTimer(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+	// Tries left to connect to File Explorer again after it restarted (see OnTaskbarCreated).
+	int m_reconnectTries;
 
 BEGIN_MSG_MAP(FSWindow)
 	MESSAGE_HANDLER(WM_CREATE, OnCreate)
@@ -2344,6 +2492,7 @@ BEGIN_MSG_MAP(FSWindow)
 	MESSAGE_HANDLER(WM_UPDATETABS, OnUpdateTabs)
 	MESSAGE_HANDLER(WM_SETTINGSCHANGED, OnSettingsChanged)
 	MESSAGE_HANDLER(WM_TASKBARCREATED, OnTaskbarCreated)
+	MESSAGE_HANDLER(WM_TIMER, OnTimer)
 	COMMAND_ID_HANDLER(ID_SHOW, OnShowPopups)
 	COMMAND_ID_HANDLER(ID_START, OnStart)
 	COMMAND_ID_HANDLER(ID_SETTINGS, OnSettings)
@@ -2392,7 +2541,7 @@ END_SINK_MAP()
 
 _ATL_FUNC_INFO ShellWindowManager::ShellWindowsEventInfo = { CC_STDCALL, VT_EMPTY, 1, {VT_I4} };
 
-ShellWindowManager::ShellWindowManager() : m_icon(NULL), m_gray(NULL), m_hScannerJob(NULL)
+ShellWindowManager::ShellWindowManager() : m_icon(NULL), m_gray(NULL), m_hScannerJob(NULL), m_reconnectTries(0)
 {
 	// A hidden top-level window rather than a message-only one: message-only windows can't be
 	// found with FindWindow (used to detect a running instance, and by the control panel and the
@@ -2481,7 +2630,9 @@ LRESULT ShellWindowManager::OnDestroy(UINT uMsg, WPARAM wParam, LPARAM lParam, B
 	return 0;
 }
 
-void ShellWindowManager::Activate()
+// Connects to File Explorer: creates the size windows of the folder windows already open and
+// listens for new ones. Returns false if File Explorer can't be reached (it is restarting).
+bool ShellWindowManager::Activate()
 {
 	NOTIFYICONDATA nid = { sizeof(nid) };
 	nid.hWnd = m_hWnd;
@@ -2490,7 +2641,16 @@ void ShellWindowManager::Activate()
 	nid.hIcon = m_icon;
 	Shell_NotifyIcon(NIM_MODIFY, &nid);
 
-	m_pShellWindows.CoCreateInstance(CLSID_ShellWindows);
+	if (FAILED(m_pShellWindows.CoCreateInstance(CLSID_ShellWindows)) || !m_pShellWindows)
+	{
+		m_pShellWindows.Release();
+		if (m_gray)
+		{
+			nid.hIcon = m_gray;
+			Shell_NotifyIcon(NIM_MODIFY, &nid);
+		}
+		return false;
+	}
 
 	long count;
 	if (SUCCEEDED(m_pShellWindows->get_Count(&count)))
@@ -2514,6 +2674,7 @@ void ShellWindowManager::Activate()
 	}
 
 	DispEventAdvise(m_pShellWindows);
+	return true;
 }
 
 void ShellWindowManager::Deactivate()
@@ -2605,6 +2766,10 @@ LRESULT ShellWindowManager::OnAppIconMsg(UINT uMsg, WPARAM wParam, LPARAM lParam
 LRESULT ShellWindowManager::OnKillWindow(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
 {
 	FSWindow* pWindow = (FSWindow*)lParam;
+	// Already deleted if the size windows were turned off, or File Explorer restarted, after
+	// this message was posted.
+	if (m_FSWindows.find(pWindow) == m_FSWindows.end())
+		return 0;
 	HWND hwndExplorer = pWindow->GetExplorerWindow();
 	m_FSWindows.erase(pWindow);
 	delete pWindow;
@@ -2804,9 +2969,42 @@ void ShellWindowManager::AddTrayIcon(HICON hIcon)
 
 // The taskbar was recreated (File Explorer restarted): add the icon again, gray when the
 // windows are turned off.
+// File Explorer (re)started: put the icon back in the notification area, and if the size windows
+// are on, connect again. The connection lives in File Explorer's process (the ShellWindows
+// object): after a restart it is dead, and new folder windows would get no size window.
 LRESULT ShellWindowManager::OnTaskbarCreated(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
 {
+	bool bWasActive = m_pShellWindows || m_reconnectTries > 0;
 	AddTrayIcon(m_pShellWindows || !m_gray ? m_icon : m_gray);
+	if (bWasActive)
+	{
+		// Forget the size windows of the old folder windows and the dead connection.
+		if (m_pShellWindows)
+			Deactivate();
+		KillTimer(RECONNECT_TIMER_ID);
+		m_reconnectTries = RECONNECT_TRIES;
+		if (Activate())
+			m_reconnectTries = 0;
+		else
+			SetTimer(RECONNECT_TIMER_ID, RECONNECT_DELAY_MS);
+	}
+	return 0;
+}
+
+// Tries again to connect to File Explorer, which wasn't ready yet (see OnTaskbarCreated).
+LRESULT ShellWindowManager::OnTimer(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+{
+	if (wParam != RECONNECT_TIMER_ID)
+	{
+		bHandled = FALSE;
+		return 0;
+	}
+	if (Activate() || --m_reconnectTries <= 0)
+	{
+		// connected, or given up: the gray icon then shows the size windows are off
+		KillTimer(RECONNECT_TIMER_ID);
+		m_reconnectTries = 0;
+	}
 	return 0;
 }
 
@@ -2824,6 +3022,9 @@ LRESULT ShellWindowManager::OnSettingsChanged(UINT uMsg, WPARAM wParam, LPARAM l
 
 LRESULT ShellWindowManager::OnShowPopups(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled)
 {
+	// stop trying to connect again, if it was (see OnTaskbarCreated)
+	KillTimer(RECONNECT_TIMER_ID);
+	m_reconnectTries = 0;
 	if (m_pShellWindows)
 		Deactivate();
 	else

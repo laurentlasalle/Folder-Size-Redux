@@ -58,7 +58,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Window"
     STR_GENERAL_MAX_WIDTH                    "Maximum &width:"
-    STR_WINDOW_LINKED_FOLDER                 "Linked folder: %s\nNot counted in this folder's total."
+    STR_WINDOW_LINKED_FOLDER                 "Linked folder: %s"
 END
 
 LANGUAGE LANG_CATALAN, SUBLANG_CATALAN_CATALAN
@@ -117,7 +117,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Finestra"
     STR_GENERAL_MAX_WIDTH                    "&Amplada màxima:"
-    STR_WINDOW_LINKED_FOLDER                 "Carpeta enllaçada: %s\nNo es compta en el total d'aquesta carpeta."
+    STR_WINDOW_LINKED_FOLDER                 "Carpeta enllaçada: %s"
 END
 
 LANGUAGE LANG_GERMAN, SUBLANG_GERMAN
@@ -176,7 +176,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Fenster"
     STR_GENERAL_MAX_WIDTH                    "Maximale &Breite:"
-    STR_WINDOW_LINKED_FOLDER                 "Verknüpfter Ordner: %s\nNicht in der Summe dieses Ordners enthalten."
+    STR_WINDOW_LINKED_FOLDER                 "Verknüpfter Ordner: %s"
 END
 
 LANGUAGE LANG_SPANISH, SUBLANG_SPANISH_MODERN
@@ -235,7 +235,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Ventana"
     STR_GENERAL_MAX_WIDTH                    "&Ancho máximo:"
-    STR_WINDOW_LINKED_FOLDER                 "Carpeta vinculada: %s\nNo se cuenta en el total de esta carpeta."
+    STR_WINDOW_LINKED_FOLDER                 "Carpeta vinculada: %s"
 END
 
 LANGUAGE LANG_FRENCH, SUBLANG_FRENCH
@@ -294,7 +294,7 @@ BEGIN
     STR_MENU_EXIT                            "&Quitter"
     STR_GENERAL_WINDOW                       "Fenêtre"
     STR_GENERAL_MAX_WIDTH                    "&Largeur maximale :"
-    STR_WINDOW_LINKED_FOLDER                 "Dossier lié : %s\nNon compté dans le total de ce dossier."
+    STR_WINDOW_LINKED_FOLDER                 "Dossier lié : %s"
 END
 
 LANGUAGE LANG_HUNGARIAN, SUBLANG_HUNGARIAN_HUNGARY
@@ -353,7 +353,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Ablak"
     STR_GENERAL_MAX_WIDTH                    "Maximális &szélesség:"
-    STR_WINDOW_LINKED_FOLDER                 "Csatolt mappa: %s\nNem számít bele ennek a mappának az összegébe."
+    STR_WINDOW_LINKED_FOLDER                 "Csatolt mappa: %s"
 END
 
 LANGUAGE LANG_ITALIAN, SUBLANG_ITALIAN
@@ -412,7 +412,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Finestra"
     STR_GENERAL_MAX_WIDTH                    "&Larghezza massima:"
-    STR_WINDOW_LINKED_FOLDER                 "Cartella collegata: %s\nNon conteggiata nel totale di questa cartella."
+    STR_WINDOW_LINKED_FOLDER                 "Cartella collegata: %s"
 END
 
 LANGUAGE LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN
@@ -471,7 +471,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "ウィンドウ"
     STR_GENERAL_MAX_WIDTH                    "最大幅(&W):"
-    STR_WINDOW_LINKED_FOLDER                 "リンクされたフォルダー: %s\nこのフォルダーの合計には含まれません。"
+    STR_WINDOW_LINKED_FOLDER                 "リンクされたフォルダー: %s"
 END
 
 LANGUAGE LANG_DUTCH, SUBLANG_DUTCH
@@ -530,7 +530,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Venster"
     STR_GENERAL_MAX_WIDTH                    "Maximale &breedte:"
-    STR_WINDOW_LINKED_FOLDER                 "Gekoppelde map: %s\nNiet meegeteld in het totaal van deze map."
+    STR_WINDOW_LINKED_FOLDER                 "Gekoppelde map: %s"
 END
 
 LANGUAGE LANG_POLISH, SUBLANG_POLISH_POLAND
@@ -589,7 +589,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Okno"
     STR_GENERAL_MAX_WIDTH                    "Maksymalna &szerokość:"
-    STR_WINDOW_LINKED_FOLDER                 "Folder połączony: %s\nNie jest wliczany do sumy tego folderu."
+    STR_WINDOW_LINKED_FOLDER                 "Folder połączony: %s"
 END
 
 LANGUAGE LANG_RUSSIAN, SUBLANG_RUSSIAN_RUSSIA
@@ -648,7 +648,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Окно"
     STR_GENERAL_MAX_WIDTH                    "Максимальная &ширина:"
-    STR_WINDOW_LINKED_FOLDER                 "Связанная папка: %s\nНе учитывается в общем размере этой папки."
+    STR_WINDOW_LINKED_FOLDER                 "Связанная папка: %s"
 END
 
 LANGUAGE LANG_SWEDISH, SUBLANG_SWEDISH
@@ -707,7 +707,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "Fönster"
     STR_GENERAL_MAX_WIDTH                    "Maximal &bredd:"
-    STR_WINDOW_LINKED_FOLDER                 "Länkad mapp: %s\nRäknas inte med i den här mappens totalstorlek."
+    STR_WINDOW_LINKED_FOLDER                 "Länkad mapp: %s"
 END
 
 LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
@@ -766,7 +766,7 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "窗口"
     STR_GENERAL_MAX_WIDTH                    "最大宽度(&W):"
-    STR_WINDOW_LINKED_FOLDER                 "链接的文件夹：%s\n不计入此文件夹的总大小。"
+    STR_WINDOW_LINKED_FOLDER                 "链接的文件夹：%s"
 END
 
 LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL
@@ -825,5 +825,5 @@ BEGIN
     STR_MENU_EXIT                            "E&xit"
     STR_GENERAL_WINDOW                       "視窗"
     STR_GENERAL_MAX_WIDTH                    "最大寬度(&W):"
-    STR_WINDOW_LINKED_FOLDER                 "連結的資料夾：%s\n不計入此資料夾的總大小。"
+    STR_WINDOW_LINKED_FOLDER                 "連結的資料夾：%s"
 END

@@ -54,4 +54,4 @@
 #define STR_MENU_EXIT                            1050  // E&xit
 #define STR_GENERAL_WINDOW                       1051  // Window
 #define STR_GENERAL_MAX_WIDTH                    1052  // Maximum &width:
-#define STR_WINDOW_LINKED_FOLDER                 1053  // Linked folder: %s Not counted in this folder's total.
+#define STR_WINDOW_LINKED_FOLDER                 1053  // Linked folder: %s
